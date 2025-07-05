@@ -1,10 +1,11 @@
 from typing import Optional
 
-from fastapi import FastAPI, Depends, Form, HTTPException, Path, Query, Header
+from fastapi import FastAPI, Depends, Form, HTTPException, Path, Query, Header, Response, Cookie
 from pymongo import MongoClient
 from pydantic import BaseModel, Field
 from datetime import datetime
 from bson import ObjectId
+import json
 
 app = FastAPI()
 
@@ -151,3 +152,79 @@ def obtener_posts_secure(
             "created": post.get("created", datetime.now()).isoformat()
         })
     return {"total": len(posts) ,"posts": posts}
+
+
+@app.get("/posts/set-cookie/")
+def set_posts_cookie(response: Response, db=Depends(get_db)):
+    docs = db["posts"].find({})
+    posts = []
+    for post in docs:
+        posts.append({
+            "id": str(post["_id"]),
+            "title": post["title"],
+            "content": post["content"],
+            "created": post.get("created", datetime.now()).isoformat()
+        })
+
+    response.set_cookie(
+        key="all_posts",
+        value=json.dumps(posts),
+        max_age=86400,
+        httponly=True,
+        secure=True,
+        samesite="lax"
+    )
+
+    return {"message": "Todos los posts han sido guardados en cookies", "total_posts": len(posts)}
+
+
+@app.get("/posts/get-cookie/")
+def get_posts_cookie(all_posts: Optional[str] = Cookie(None)):
+    posts = json.loads(all_posts)
+    if not posts:
+        raise HTTPException(
+            status_code=404,
+            detail="No se encontraron posts en cookies"
+        )
+    return {
+        "message": "Posts recuperados de cookies",
+        "total": len(posts),
+        "posts": posts
+    }
+
+@app.get("/posts/clear-cookie/")
+def clear_posts_cookie(response: Response):
+    response.delete_cookie("all_posts")
+    return {"message": "Cookie de posts eliminada"}
+
+
+@app.put("/post/edit/{post_id}")
+def edit_one_post(post_id: str, post: PostCreate, db=Depends(get_db)):
+    existing_post = db["posts"].find_one({"_id": ObjectId(post_id)})
+    if not existing_post:
+        return {"error": "No existing post"}
+    updated_data = {
+        "title": post.title,
+        "content": post.content
+    }
+    filtro = {"_id": ObjectId(post_id)}
+    _set = {"$set": updated_data}
+    db["posts"].update_one(filtro, _set)
+
+    updated_post = db["posts"].find_one({"_id": ObjectId(post_id)})
+    return {
+        "id": str(updated_post["_id"]),
+        "title": updated_post["title"],
+        "content": updated_post["content"],
+        "created": updated_post.get("created", datetime.now()).isoformat()
+    }
+
+
+@app.delete("/post/delete/{post_id}")
+def delete_one_post(post_id: str, db=Depends(get_db)):
+    post = db["posts"].find_one({"_id": ObjectId(post_id)})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    db["posts"].delete_one({"_id": ObjectId(post_id)})
+    return {"message": "Post deleted successfully"}
