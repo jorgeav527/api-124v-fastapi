@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import FastAPI, Depends, Form, HTTPException, Path, Query
+from fastapi import FastAPI, Depends, Form, HTTPException, Path, Query, Header
 from pymongo import MongoClient
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -126,3 +126,28 @@ def create_one_post_form_data(
         "content": created_post["content"],
         "created": created_post["created"].isoformat()
     }
+
+
+@app.get("/posts/secure/")
+def obtener_posts_secure(
+    authorization: str = Header(..., alias="Authorization", description="Token en formato 'Bearer <token>'"),
+    db=Depends(get_db)
+):
+    if not authorization.startswith("Bearer "):
+        return {"error": "Formato de token inválido. Use 'Bearer <token>'"}
+    
+    token = authorization[7:]
+    if token != "secreto123":
+        return {"error": "No es el <token>'"}
+    
+    docs = db["posts"].find({})
+
+    posts = []
+    for post in docs:
+        posts.append({
+            "id": str(post["_id"]),
+            "title": post["title"],
+            "content": post["content"],
+            "created": post.get("created", datetime.now()).isoformat()
+        })
+    return {"total": len(posts) ,"posts": posts}
