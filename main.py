@@ -1,9 +1,10 @@
-from typing import Union
+from typing import Optional
 
-from fastapi import FastAPI, Depends, Form
+from fastapi import FastAPI, Depends, Form, HTTPException, Path, Query
 from pymongo import MongoClient
 from pydantic import BaseModel, Field
 from datetime import datetime
+from bson import ObjectId
 
 app = FastAPI()
 
@@ -17,10 +18,6 @@ def get_db():
     finally:
         client.close()
 
-class PostBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=50)
-    content: str = Field(..., min_length=1, max_length=255)
-
 class PostCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=50)
     content: str = Field(..., min_length=1, max_length=255)
@@ -30,11 +27,32 @@ class PostCreate(BaseModel):
 def index():
     return {"message": "Welcome to the API, Upgrade"}
 
-@app.get("/post")
-def get_all_post(db=Depends(get_db)):
+# @app.get("/post")
+# def get_all_post(db=Depends(get_db)):
+#     posts = []
+#     docs = db["posts"].find()
+#     for post in docs:
+#         posts.append({
+#             "id": str(post["_id"]),
+#             "title": post["title"],
+#             "content": post["content"],
+#             "created": post.get("created", datetime.now()).isoformat()
+#         })
+#     return {"total": len(posts) ,"posts": posts}
+
+
+@app.get("/posts")
+def buscar_posts(
+    titulo: Optional[str] = Query(None, min_length=1, max_length=255, description="Filtrar por título"),
+    db = Depends(get_db)
+):
+    filtro = {}
+    if titulo:
+        filtro["title"] = {"$regex": titulo, "$options": "i"}
+
+    docs = db["posts"].find(filtro)
+
     posts = []
-    docs = db["posts"].find()
-    print(docs)
     for post in docs:
         posts.append({
             "id": str(post["_id"]),
@@ -43,6 +61,36 @@ def get_all_post(db=Depends(get_db)):
             "created": post.get("created", datetime.now()).isoformat()
         })
     return {"total": len(posts) ,"posts": posts}
+
+
+
+
+
+
+@app.get("/post/{post_id}")
+def obtener_post(
+    post_id: str = Path(...,
+                       title="ID del post",
+                       description="ID del post a obtener",
+                       min_length=24,
+                       max_length=24,
+                       regex="^[0-9a-fA-F]{24}$"),
+    db = Depends(get_db)
+):
+    try:
+        post = db["posts"].find_one({"_id": ObjectId(post_id)})
+
+        if not post:
+            return {"error": "post no encontrado"}
+
+        return {
+            "id": str(post["_id"]),
+            "title": post["title"],
+            "content": post["content"],
+            "created": post["created"].isoformat()
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.post("/post/create-json-data")
