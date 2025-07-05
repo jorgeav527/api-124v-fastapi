@@ -63,10 +63,6 @@ def buscar_posts(
     return {"total": len(posts) ,"posts": posts}
 
 
-
-
-
-
 @app.get("/post/{post_id}")
 def obtener_post(
     post_id: str = Path(...,
